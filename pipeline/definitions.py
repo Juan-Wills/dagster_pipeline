@@ -5,13 +5,18 @@ into objects Dagster can discover via `workspace.yaml`.
 """
 
 # Example placeholder imports
-# from dagster import Definitions
-# from .assets import *
-# from .jobs import *
-# from .resources import DatabaseResource
-# from .schedules import *
-# from .sensors import *
+from dagster import Definitions, AssetsDefinition
+from pipeline.assets import test
+from pipeline.jobs import *
+from pipeline.resources import DatabaseResource
+from pipeline.schedules import *
+from pipeline.sensors import *
 
-# definitions = Definitions(...)
-
-__all__ = ["definitions"]
+# Create the Definitions object - Dagster will discover this
+defs = Definitions(
+    assets=[test.hi],
+    # jobs=[],
+    # resources={},
+    # schedules=[],
+    # sensors=[],
+)

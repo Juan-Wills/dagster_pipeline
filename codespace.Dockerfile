@@ -1,5 +1,5 @@
 # Stage 1: The builder stage. This handles all heavy installations.
-FROM python:3.13-bookworm AS builder
+FROM python:3.13-slim-bookworm AS builder
 
 # Install build-time dependencies and uv
 RUN apt-get update && apt-get install -y \
@@ -15,15 +15,21 @@ WORKDIR /dagster_pipeline
 # Install uv package manager
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy all files and directories
-COPY . .
+# Copy dependency files first for better layer caching
+COPY pyproject.toml uv.lock ./
 
-# Create and activate virtual environment
-RUN chmod +x entrypoint.sh && \
-    uv sync --frozen --no-cache --no-dev
+# Install dependencies only (better caching)
+RUN uv sync --frozen --no-dev --group dagster
+
+# Copy application files
+COPY pipeline ./pipeline
+COPY entrypoint.sh ./entrypoint.sh
+
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
 
 # Stage 2: The final, lean production image
-FROM python:3.13-bookworm AS final
+FROM python:3.13-slim-bookworm AS final
 
 # Install only the necessary runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -41,14 +47,17 @@ COPY --from=builder /dagster_pipeline/.venv ./.venv
 COPY --from=builder /dagster_pipeline/entrypoint.sh ./entrypoint.sh
 
 # Set environment variable PATH to use the virtual environment  
-ENV PATH="/dagster_pipeline/.venv/bin:$PATH"
+ENV PATH="/dagster_pipeline/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    DAGSTER_HOME=/dagster_pipeline/pipeline
 
 # Expose ports 
-EXPOSE 3000
+EXPOSE 4000
 
-# Health check 
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/ || exit 1
+# Health check - check if process is listening on port 4000
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:4000/ || exit 1
 
-CMD ["sleep", "infinity"]
+# Use exec form with module-based loading
+CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-m", "pipeline.definitions"]
 
