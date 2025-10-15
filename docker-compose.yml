@@ -1,0 +1,12 @@
+services:
+  dagster:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dagster_container
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./pipeline:/dagster_pipeline/pipeline 
+      - ./entrypoint.sh:/dagster_pipeline/entrypoint.sh
+    entrypoint: ["./entrypoint.sh"]
