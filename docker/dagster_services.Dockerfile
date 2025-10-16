@@ -29,19 +29,19 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 WORKDIR /dagster_pipeline
 
 # Set $DAGSTER_HOME environment variable
-ENV DAGSTER_HOME=/dagster_pipeline/pipeline/
+ENV DAGSTER_HOME=/dagster_pipeline/config/
 
-# Create DAGSTER_HOME directory
-RUN mkdir -p $DAGSTER_HOME
+# Create DAGSTER_HOME and storage directories
+RUN mkdir -p $DAGSTER_HOME && \
+    mkdir -p /dagster_pipeline/.dagster/compute_logs && \
+    mkdir -p /dagster_pipeline/.dagster/storage
 
-# Copy the entire pipeline directory with all code
-COPY pipeline/ ./pipeline/
+# Copy config and dagster_pipeline directories
+COPY config/ ./config/
+COPY dagster_pipeline/ ./dagster_pipeline/
 
 # Set Python path to include the parent directory for proper module imports
 ENV PYTHONPATH=/dagster_pipeline:$PYTHONPATH
-
-# Set working directory to DAGSTER_HOME
-WORKDIR $DAGSTER_HOME
 
 # Expose port for webserver
 EXPOSE 3000

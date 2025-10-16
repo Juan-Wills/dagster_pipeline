@@ -20,7 +20,12 @@ compute_logs:
   module: dagster.core.storage.local_compute_log_manager
   class: LocalComputeLogManager
   config:
-    base_dir: "/pipeline/.metadata/compute_logs"
+    base_dir: "/dagster_pipeline/.dagster/compute_logs"
 
 telemetry:
   enabled: false
+local_artifact_storage:
+  module: dagster.core.storage.root
+  class: LocalArtifactStorage
+  config:
+    base_dir: "/dagster_pipeline/.dagster/storage"
