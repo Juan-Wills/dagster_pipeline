@@ -5,7 +5,7 @@ services:
   dagster-webserver:
     build:
       context: .
-      dockerfile: daster_services.Dockerfile
+      dockerfile: docker/dagster_services.Dockerfile
     container_name: webserver
     env_file:
       - .env
@@ -25,6 +25,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/io_manager_storage:/tmp/io_manager_storage
+      - ./dagster_pipeline:/dagster_pipeline/dagster_pipeline:ro
+      - ./config:/dagster_pipeline/config:ro
     entrypoint: 
       - dagster-webserver 
       - -h 
@@ -32,7 +34,7 @@ services:
       - -p 
       - '3000'
       - -w 
-      - /dagster_pipeline/pipeline/workspace.yaml
+      - /dagster_pipeline/config/workspace.yaml
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/server_info"]
       interval: 30s
@@ -50,7 +52,7 @@ services:
   dagster-deamon:
     build:
       context: .
-      dockerfile: daster_services.Dockerfile
+      dockerfile: docker/dagster_services.Dockerfile
     container_name: deamon
     env_file:
       - .env
@@ -66,11 +68,13 @@ services:
     volumes:  # Make docker client accessible so we can launch containers using host docker
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/io_manager_storage:/tmp/io_manager_storage
+      - ./dagster_pipeline:/dagster_pipeline/dagster_pipeline:ro
+      - ./config:/dagster_pipeline/config:ro
     entrypoint:
       - dagster-daemon
       - run
       - -w
-      - /dagster_pipeline/pipeline/workspace.yaml
+      - /dagster_pipeline/config/workspace.yaml
     restart: on-failure
     depends_on:
       postgres:
@@ -81,7 +85,7 @@ services:
   codespace:
     build:
       context: .
-      dockerfile: codespace.Dockerfile
+      dockerfile: docker/codespace.Dockerfile
     container_name: codespace
     env_file:
       - .env
@@ -96,7 +100,11 @@ services:
     networks:
       - dagster_pipeline
     volumes:
-      - ./pipeline:/dagster_pipeline/pipeline 
+      - ./dagster_pipeline:/dagster_pipeline/dagster_pipeline
+      - ./config:/dagster_pipeline/config
+      - ./auth:/dagster_pipeline/auth
+      - ./data:/dagster_pipeline/data
+ 
 
   postgres:
     image: postgres:16
