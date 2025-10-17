@@ -202,6 +202,19 @@ wheels = [
 ]
 
 [[package]]
+name = "dagster-duckdb"
+version = "0.27.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dagster" },
+    { name = "duckdb" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/75/1fc547b68be40770c651d61d99ae33c4e7edd086016e134cd7506d827190/dagster_duckdb-0.27.14.tar.gz", hash = "sha256:fa163b6648172792121917471dfb83875a4122e95979873ddc6074b4f6acdc5f", size = 9376, upload-time = "2025-10-09T20:07:53.447Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/39/21b619e77bac824e324212bda3e0a5367d86bad8b1b876edf1530e5aedcb/dagster_duckdb-0.27.14-py3-none-any.whl", hash = "sha256:f580aecd092c72b39d6bac6d002bcb79d44a279af6706fa5af5724f8e01d3078", size = 10596, upload-time = "2025-10-09T20:07:52.636Z" },
+]
+
+[[package]]
 name = "dagster-pipeline"
 version = "0.1.0"
 source = { virtual = "." }
@@ -215,6 +228,7 @@ dependencies = [
 dagster = [
     { name = "dagster" },
     { name = "dagster-docker" },
+    { name = "dagster-duckdb" },
     { name = "dagster-postgres" },
 ]
 dev = [
@@ -238,6 +252,7 @@ requires-dist = [
 dagster = [
     { name = "dagster", specifier = ">=1.11.14" },
     { name = "dagster-docker", specifier = ">=0.27.14" },
+    { name = "dagster-duckdb", specifier = ">=0.27.14" },
     { name = "dagster-postgres", specifier = ">=0.27.14" },
 ]
 dev = [
