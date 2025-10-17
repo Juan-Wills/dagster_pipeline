@@ -19,7 +19,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies including google-api group (better caching)
-RUN uv sync --frozen --no-dev --group dagster --group google-api
+RUN uv sync --frozen --all-groups
 
 # Copy application files
 COPY dagster_pipeline ./dagster_pipeline

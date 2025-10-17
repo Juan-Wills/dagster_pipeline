@@ -1,4 +1,4 @@
-uvservices:
+services:
   # This service runs dagster-webserver, which loads the code from the user codespace container.
   # Since our instance uses the QueuedRunCoordinator, any runs submitted from the webserver will be put on
   # a queue and later dequeued and launched by dagster-daemon.

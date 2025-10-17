@@ -4,7 +4,7 @@ dagster_pipeline/storage/
 
 # Environment
 .env
-*.env.local
+.env.local
 
 # Python
 __pycache__/
@@ -30,8 +30,7 @@ wheels/
 MANIFEST
 
 # Data directories
-data/
-!data/.gitkeep
+data/duckdb/*
 
 # Auth & credentials
 auth/
