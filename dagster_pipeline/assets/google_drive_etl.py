@@ -1,17 +1,12 @@
 import pandas as pd
 import io
-from dagster import AssetExecutionContext, Output
+
 import dagster as dg
+from dagster import AssetExecutionContext, Output
 from dagster_pipeline.resources.duckdb_connection import DuckDBResource
 from dagster_pipeline.resources.google_drive_resource import GoogleDriveResource
-from typing import Dict, List
-import io
-import pandas as pd
+
 from typing import List, Dict
-from dagster import asset, AssetExecutionContext, Output
-from dagster_pipeline.resources.google_drive_resource import GoogleDriveResource
-import os
-from pathlib import Path
 
 
 @dg.asset(
@@ -66,6 +61,7 @@ def extracted_csv_files(
         # Try to read CSV with different combinations
         df = None
         parse_info = {'separator': None, 'encoding': None}
+        chunk_size = 100000  # Read in chunks of 100,000 rows
         
         for encoding in encodings:
             for separator in separators:
@@ -73,13 +69,25 @@ def extracted_csv_files(
                     # Reset file pointer
                     file_content.seek(0)
                     
-                    df = pd.read_csv(
+                    # Read CSV in chunks
+                    chunks = []
+                    chunk_reader = pd.read_csv(
                         file_content,
                         sep=separator,
                         encoding=encoding,
                         engine='python',
-                        on_bad_lines='skip'  # Skip problematic lines
+                        on_bad_lines='skip',  # Skip problematic lines
+                        chunksize=chunk_size
                     )
+                    
+                    for i, chunk in enumerate(chunk_reader):
+                        context.log.info(f"  Processing chunk {i+1} ({len(chunk)} rows)")
+                        chunks.append(chunk)
+                    
+                    # Concatenate all chunks
+                    if chunks:
+                        df = pd.concat(chunks, ignore_index=True)
+                        context.log.info(f"  Combined {len(chunks)} chunk(s) into DataFrame")
                     
                     # Validate: must have at least 1 column and 1 row
                     if df is not None and len(df.columns) > 0 and len(df) > 0:
@@ -98,7 +106,22 @@ def extracted_csv_files(
             context.log.warning(f"  Standard parsers failed. Trying pandas auto-detection...")
             try:
                 file_content.seek(0)
-                df = pd.read_csv(file_content, engine='python', on_bad_lines='skip')
+                # Read with chunking even for auto-detection
+                chunks = []
+                chunk_reader = pd.read_csv(
+                    file_content, 
+                    engine='python', 
+                    on_bad_lines='skip',
+                    chunksize=chunk_size
+                )
+                
+                for i, chunk in enumerate(chunk_reader):
+                    context.log.info(f"  Processing chunk {i+1} ({len(chunk)} rows)")
+                    chunks.append(chunk)
+                
+                if chunks:
+                    df = pd.concat(chunks, ignore_index=True)
+                
                 parse_info = {'separator': 'auto', 'encoding': 'auto'}
                 context.log.info(f"  Parsed with auto-detection")
             except Exception as e:

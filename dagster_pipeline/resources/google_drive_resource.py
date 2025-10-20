@@ -9,9 +9,9 @@ from typing import List, Dict, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.auth.credentials import Credentials as AuthCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload, MediaIoBaseUpload
 
 from dagster import ConfigurableResource
@@ -33,8 +33,7 @@ class GoogleDriveResource(ConfigurableResource):
         default=["https://www.googleapis.com/auth/drive"],
         description="Google Drive API scopes"
     )
-    
-    def _get_credentials(self) -> Credentials:
+    def _get_credentials(self) -> AuthCredentials:
         """Get or refresh Google Drive credentials."""
         creds = None
         
@@ -53,6 +52,7 @@ class GoogleDriveResource(ConfigurableResource):
             with open(self.token_path, "w") as token:
                 token.write(creds.to_json())
         
+        return creds
         return creds
     
     def get_service(self):
@@ -104,7 +104,7 @@ class GoogleDriveResource(ConfigurableResource):
         service = self.get_service()
         request = service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
+        downloader = MediaIoBaseDownload(fh, request)   # Has chunksize argument!!!
         
         done = False
         while not done:
