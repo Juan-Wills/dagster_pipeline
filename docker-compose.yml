@@ -105,7 +105,7 @@ services:
       - ./auth:/dagster_pipeline/auth
       - ./data:/dagster_pipeline/data
  
-
+  # PostgreSQL service for application data
   postgres:
     image: postgres:16
     container_name: postgres
@@ -123,7 +123,32 @@ services:
       - dagster_pipeline
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-juan-wills} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # MongoDB service
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    env_file:
+      - .env
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    ports:
+      - "27017:27017"
+    networks:
+      - dagster_pipeline
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -136,4 +161,10 @@ networks:
 
 volumes:
   postgres-data:
+    driver: local
+  postgresql-data:
+    driver: local
+  mongodb-data:
+    driver: local
+  mongodb-config:
     driver: local

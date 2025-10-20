@@ -29,3 +29,8 @@ google-api = [
     "google-auth-httplib2>=0.2.0",
     "google-auth-oauthlib>=1.2.2",
 ]
+databases = [
+    "psycopg2-binary>=2.9.9",
+    "pymongo>=4.10.1",
+    "sqlalchemy>=2.0.36",
+]
