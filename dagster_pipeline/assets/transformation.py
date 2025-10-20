@@ -106,7 +106,11 @@ def transformed_csv_files(
                             .astype(str)                           # Convert to string
                             .str.strip()                           # Remove leading/trailing spaces
                             .str.replace(r'\s+', ' ', regex=True)  # Collapse whitespace
+                            .str.normalize('NFKD')                        # Split accent marks
+                            .str.encode('utf-8', errors='ignore')  # encode as utf-8
+                            .str.decode('utf-8')             # decode as utf-8
                             .str.upper()                           # Normalize to uppercase
+                            .str.replace(r'[^A-Z0-9@/\s\.\-_]', '', regex=True) # Keep @, /, ., -, _  remove special chars
                         )
                         
                         # Replace null-like strings with NA
@@ -150,7 +154,7 @@ def transformed_csv_files(
 
             # 7. Remove constant columns (all values the same)
             cols_before = df.shape[1]
-            varying_cols = [col for col in df.columns if df[col].nunique(dropna=False) > 1]
+            varying_cols = [col for col in df.columns if df[col].nunique(dropna=False) > 2]
             df = df[varying_cols]
             cols_after = df.shape[1]
             
