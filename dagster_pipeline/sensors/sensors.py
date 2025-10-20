@@ -12,7 +12,7 @@ from dagster_pipeline.resources.google_drive_resource import GoogleDriveResource
 @sensor(
     name="google_drive_new_file_sensor",
     asset_selection=AssetSelection.assets("process_drive_files"),
-    minimum_interval_seconds=10,  # Check every 60 seconds
+    minimum_interval_seconds=60,  # Check every 60 seconds
     description="Monitors Google Drive raw_data folder for new CSV files"
 )
 def google_drive_new_file_sensor(

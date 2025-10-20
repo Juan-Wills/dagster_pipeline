@@ -7,7 +7,6 @@ This module contains assets responsible for:
 """
 
 import pandas as pd
-import io
 
 import dagster as dg
 from dagster import AssetExecutionContext, Output
