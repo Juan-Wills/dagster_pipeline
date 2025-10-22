@@ -22,7 +22,10 @@ dagster = [
 ]
 dev = [
     "black>=25.9.0",
+    "jupyter>=1.1.1",
     "pytest>=8.4.2",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
 ]
 google-api = [
     "google-api-python-client>=2.184.0",

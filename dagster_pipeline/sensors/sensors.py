@@ -29,13 +29,15 @@ def google_drive_new_file_sensor(
     
     if not raw_folder_id:
         context.log.error("'raw_data' folder not found in Google Drive")
-        return SkipReason("raw_data folder not found")
+        yield SkipReason("raw_data folder not found")
+        return
     
     # List all CSV files in the folder
     files = google_drive.list_files_in_folder(raw_folder_id, mime_type='text/csv')
     
     if not files:
-        return SkipReason("No CSV files in raw_data folder")
+        yield SkipReason("No CSV files in raw_data folder")
+        return
     
     # Get cursor (last processed state)
     cursor_dict = json.loads(context.cursor) if context.cursor else {}
@@ -48,7 +50,8 @@ def google_drive_new_file_sensor(
     new_file_ids = current_file_ids - last_seen_files
     
     if not new_file_ids:
-        return SkipReason(f"No new files detected. Still monitoring {len(files)} file(s).")
+        yield SkipReason(f"No new files detected. Still monitoring {len(files)} file(s).")
+        return
     
     # Get details of new files
     new_files = [f for f in files if f['id'] in new_file_ids]
