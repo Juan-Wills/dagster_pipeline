@@ -82,25 +82,41 @@ def upload_transformed_csv_files(
                 context.log.info(f"  ✓ Created new file: {uploaded['name']} (ID: {uploaded['id']})")
             
             uploaded_files.append({
+                'file_name': file_name,
                 'name': uploaded['name'],
                 'id': uploaded['id'],
-                'action': action
+                'action': action,
+                'status': 'success'
             })
         except Exception as e:
             context.log.error(f"  ✗ Error uploading {file_name}: {str(e)}")
+            # Track failed uploads
+            uploaded_files.append({
+                'file_name': file_name,
+                'name': file_name,
+                'id': None,
+                'action': 'failed',
+                'status': 'failed',
+                'error': str(e)
+            })
+    
+    # Count successful vs failed uploads
+    successful_uploads = [f for f in uploaded_files if f.get('status') == 'success']
+    failed_uploads = [f for f in uploaded_files if f.get('status') == 'failed']
     
     context.log.info(
-        f"Upload completed. {len(uploaded_files)} file(s) uploaded "
-        f"({created_count} new, {replaced_count} replaced)"
+        f"Upload completed. {len(successful_uploads)}/{len(uploaded_files)} file(s) uploaded successfully "
+        f"({created_count} new, {replaced_count} replaced, {len(failed_uploads)} failed)"
     )
     
     return Output(
         value=uploaded_files,
         metadata={
-            "files_uploaded": len(uploaded_files),
+            "files_uploaded": len(successful_uploads),
             "files_created": created_count,
             "files_replaced": replaced_count,
-            "file_names": [f['name'] for f in uploaded_files],
+            "files_failed": len(failed_uploads),
+            "file_names": [f['name'] for f in successful_uploads],
             "total_rows": sum(f['row_count'] for f in transformed_csv_files)
         }
     )
@@ -388,23 +404,31 @@ def check_upload_success(upload_transformed_csv_files: List[Dict]) -> AssetCheck
             severity=AssetCheckSeverity.WARN
         )
     
-    failed_uploads = [f for f in upload_transformed_csv_files if f.get('status') != 'success']
+    # Separate successful and failed uploads
+    successful_uploads = [f for f in upload_transformed_csv_files if f.get('status') == 'success']
+    failed_uploads = [f for f in upload_transformed_csv_files if f.get('status') == 'failed']
     
     if failed_uploads:
         return AssetCheckResult(
             passed=False,
-            description=f"{len(failed_uploads)} file(s) failed to upload",
+            description=f"{len(failed_uploads)}/{len(upload_transformed_csv_files)} file(s) failed to upload",
             severity=AssetCheckSeverity.ERROR,
             metadata={
                 "failed_count": len(failed_uploads),
-                "failed_files": [f.get('file_name', 'unknown') for f in failed_uploads]
+                "failed_files": [f.get('file_name', 'unknown') for f in failed_uploads],
+                "error_messages": [f.get('error', 'Unknown error') for f in failed_uploads],
+                "successful_count": len(successful_uploads)
             }
         )
     
     return AssetCheckResult(
         passed=True,
         description=f"All {len(upload_transformed_csv_files)} files uploaded successfully",
-        metadata={"files_uploaded": len(upload_transformed_csv_files)}
+        metadata={
+            "files_uploaded": len(upload_transformed_csv_files),
+            "files_created": len([f for f in upload_transformed_csv_files if f.get('action') == 'created']),
+            "files_replaced": len([f for f in upload_transformed_csv_files if f.get('action') == 'replaced'])
+        }
     )
 
 
@@ -418,9 +442,11 @@ def check_duckdb_loading(load_csv_files_to_duckdb: List[Dict]) -> AssetCheckResu
             severity=AssetCheckSeverity.WARN
         )
     
+    # Check if any tables are missing required fields (indicating failure)
     failed_tables = []
     for table_info in load_csv_files_to_duckdb:
-        if table_info.get('status') != 'success':
+        # A successful table should have: table_name, row_count, and column_count
+        if not all(key in table_info for key in ['table_name', 'row_count', 'column_count']):
             failed_tables.append(table_info.get('table_name', 'unknown'))
     
     if failed_tables:
@@ -451,9 +477,11 @@ def check_postgresql_loading(load_csv_files_to_postgresql: List[Dict]) -> AssetC
             severity=AssetCheckSeverity.WARN
         )
     
+    # Check if any tables are missing required fields (indicating failure)
     failed_tables = []
     for table_info in load_csv_files_to_postgresql:
-        if table_info.get('status') != 'success':
+        # A successful table should have: table_name, row_count, and column_count
+        if not all(key in table_info for key in ['table_name', 'row_count', 'column_count']):
             failed_tables.append(table_info.get('table_name', 'unknown'))
     
     if failed_tables:
@@ -484,9 +512,11 @@ def check_mongodb_loading(load_csv_files_to_mongodb: List[Dict]) -> AssetCheckRe
             severity=AssetCheckSeverity.WARN
         )
     
+    # Check if any collections are missing required fields (indicating failure)
     failed_collections = []
     for collection_info in load_csv_files_to_mongodb:
-        if collection_info.get('status') != 'success':
+        # A successful collection should have: collection_name and document_count
+        if not all(key in collection_info for key in ['collection_name', 'document_count']):
             failed_collections.append(collection_info.get('collection_name', 'unknown'))
     
     if failed_collections:

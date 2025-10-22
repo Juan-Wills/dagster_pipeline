@@ -9,19 +9,21 @@ from dagster_pipeline.assets import extraction, transformation, loading
 from dagster_pipeline.resources import GoogleDriveResource, database_resource, PostgreSQLResource, MongoDBResource
 from dagster_pipeline.sensors import google_drive_new_file_sensor
 from config import CREDENTIALS_PATH, TOKEN_PATH
-from dagster import Definitions, load_assets_from_modules
+from dagster import Definitions, load_assets_from_modules, load_asset_checks_from_modules
 from dagster_pipeline.resources.duckdb_connection import database_resource
 
 
 # Get the project root directory (parent of pipeline directory)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Load assets from organized modules
+# Load assets and asset checks from organized modules
 all_assets = load_assets_from_modules([extraction, transformation, loading])
+all_asset_checks = load_asset_checks_from_modules([extraction, transformation, loading])
 
 # Create the Definitions object - Dagster will discover this
 defs = Definitions(
     assets=all_assets,
+    asset_checks=all_asset_checks,
     resources={
         "google_drive": GoogleDriveResource(
             credentials_path=str(CREDENTIALS_PATH),
