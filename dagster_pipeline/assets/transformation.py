@@ -11,7 +11,7 @@ This module contains assets responsible for:
 import pandas as pd
 
 import dagster as dg
-from dagster import AssetExecutionContext, Output
+from dagster import AssetExecutionContext, Output, AssetCheckResult, AssetCheckSeverity, asset_check
 
 from typing import List, Dict
 
@@ -205,4 +205,124 @@ def transformed_csv_files(
             "total_rows": sum(f['row_count'] for f in transformed_data),
             "file_names": [f['output_file_name'] for f in transformed_data]
         }
+    )
+
+
+# ============================================================================
+# Asset Checks for Transformation
+# ============================================================================
+
+@asset_check(asset=transformed_csv_files, description="Validates column names are normalized")
+def check_column_normalization(transformed_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that all column names are properly normalized (uppercase, no duplicates)."""
+    issues = []
+    
+    for file_data in transformed_csv_files:
+        df = file_data.get('dataframe')
+        file_name = file_data.get('output_file_name', 'unknown')
+        
+        if df is None:
+            issues.append(f"{file_name}: No dataframe found")
+            continue
+        
+        # Check all columns are uppercase
+        non_uppercase = [col for col in df.columns if col != col.upper()]
+        if non_uppercase:
+            issues.append(f"{file_name}: Non-uppercase columns: {non_uppercase}")
+        
+        # Check for duplicate column names
+        if len(df.columns) != len(set(df.columns)):
+            duplicates = df.columns[df.columns.duplicated()].tolist()
+            issues.append(f"{file_name}: Duplicate columns: {duplicates}")
+        
+        # Check for empty/whitespace column names
+        empty_cols = [col for col in df.columns if not col or not col.strip()]
+        if empty_cols:
+            issues.append(f"{file_name}: Empty column names found")
+    
+    if issues:
+        return AssetCheckResult(
+            passed=False,
+            description=f"Column normalization issues: {'; '.join(issues)}",
+            severity=AssetCheckSeverity.ERROR
+        )
+    
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(transformed_csv_files)} files have properly normalized columns",
+        metadata={"files_checked": len(transformed_csv_files)}
+    )
+
+
+@asset_check(asset=transformed_csv_files, description="Validates data quality after transformation")
+def check_transformation_quality(transformed_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that transformed data meets quality standards."""
+    warnings = []
+    
+    for file_data in transformed_csv_files:
+        df = file_data.get('dataframe')
+        file_name = file_data.get('output_file_name', 'unknown')
+        
+        if df is None or len(df) == 0:
+            warnings.append(f"{file_name}: Empty dataframe")
+            continue
+        
+        # Check for excessive missing values
+        missing_pct = (df.isnull().sum() / len(df) * 100).max()
+        if missing_pct > 50:
+            warnings.append(f"{file_name}: Column with {missing_pct:.1f}% missing values")
+        
+        # Check for columns with all same values (should have been removed)
+        constant_cols = [col for col in df.columns if df[col].nunique(dropna=False) <= 1]
+        if constant_cols:
+            warnings.append(f"{file_name}: Constant columns detected: {constant_cols}")
+    
+    if warnings:
+        return AssetCheckResult(
+            passed=True,
+            description=f"Quality warnings: {'; '.join(warnings)}",
+            severity=AssetCheckSeverity.WARN,
+            metadata={"warning_count": len(warnings)}
+        )
+    
+    total_rows = sum(f['row_count'] for f in transformed_csv_files)
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(transformed_csv_files)} files meet quality standards",
+        metadata={
+            "files_checked": len(transformed_csv_files),
+            "total_rows": total_rows
+        }
+    )
+
+
+@asset_check(asset=transformed_csv_files, description="Validates transformation preserves data")
+def check_transformation_preserves_data(transformed_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that transformation doesn't lose too much data."""
+    issues = []
+    
+    for file_data in transformed_csv_files:
+        df = file_data.get('dataframe')
+        original_file = file_data.get('original_file_name', 'unknown')
+        row_count = file_data.get('row_count', 0)
+        
+        if df is None:
+            issues.append(f"{original_file}: No transformed data")
+            continue
+        
+        # Ensure we have some rows left after transformation
+        if row_count == 0:
+            issues.append(f"{original_file}: All rows removed during transformation")
+    
+    if issues:
+        return AssetCheckResult(
+            passed=False,
+            description=f"Data preservation issues: {'; '.join(issues)}",
+            severity=AssetCheckSeverity.ERROR
+        )
+    
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(transformed_csv_files)} files preserved data through transformation",
+        metadata={"files_checked": len(transformed_csv_files)}
     )

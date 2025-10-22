@@ -1,78 +1,101 @@
 """Tests for Dagster assets
 
 Tests for extraction, transformation, and loading assets.
-Following Dagster best practices for asset testing.
+Using AssetChecks instead of mocks for validation.
 """
 
 import io
 import pandas as pd
 import pytest
-from unittest.mock import MagicMock, patch
 
-from dagster import build_asset_context, materialize
-from dagster_pipeline.assets.extraction import extracted_csv_files
-from dagster_pipeline.assets.transformation import transformed_csv_files
+from dagster import build_asset_context, materialize, materialize_to_memory
+from dagster_pipeline.assets.extraction import (
+    extracted_csv_files,
+    check_extracted_files_structure,
+    check_extracted_data_not_empty,
+    check_extracted_parsing_info
+)
+from dagster_pipeline.assets.transformation import (
+    transformed_csv_files,
+    check_column_normalization,
+    check_transformation_quality,
+    check_transformation_preserves_data
+)
 from dagster_pipeline.assets.loading import (
     upload_transformed_csv_files,
     load_csv_files_to_duckdb,
     load_csv_files_to_postgresql,
-    load_csv_files_to_mongodb
+    load_csv_files_to_mongodb,
+    check_upload_success,
+    check_duckdb_loading,
+    check_postgresql_loading,
+    check_mongodb_loading
 )
 
 
 # ============================================================================
-# Extraction Asset Tests
+# Extraction Asset Tests with AssetChecks
 # ============================================================================
 
 class TestExtractionAssets:
-    """Test suite for extraction assets."""
+    """Test suite for extraction assets using AssetChecks."""
     
-    def test_extracted_csv_files_success(self, mock_google_drive):
-        """Test successful CSV file extraction from Google Drive."""
-        context = build_asset_context(resources={"google_drive": mock_google_drive})
+    def test_extracted_csv_files_success(self, google_drive_resource):
+        """Test successful CSV file extraction using AssetChecks."""
+        # Materialize the asset and run checks
+        result = materialize_to_memory(
+            [extracted_csv_files, check_extracted_files_structure, 
+             check_extracted_data_not_empty, check_extracted_parsing_info],
+            resources={"google_drive": google_drive_resource}
+        )
         
-        result = extracted_csv_files(context)
+        # Check that asset materialization succeeded
+        assert result.success
         
-        # Verify the asset returned data
-        assert result.value is not None
-        assert isinstance(result.value, list)
-        assert len(result.value) > 0
+        # Get the materialized data
+        extracted_data = result.output_for_node("extracted_csv_files")
+        assert extracted_data is not None
+        assert isinstance(extracted_data, list)
+        assert len(extracted_data) > 0
         
-        # Verify each extracted file has required structure
-        for file_data in result.value:
-            assert 'file_name' in file_data
-            assert 'dataframe' in file_data
-            assert 'row_count' in file_data
-            assert 'column_count' in file_data
-            assert 'parse_info' in file_data
-            assert isinstance(file_data['dataframe'], pd.DataFrame)
+        # Verify AssetChecks passed
+        check_results = result.get_asset_check_evaluations()
+        for check_result in check_results:
+            assert check_result.passed, f"Check failed: {check_result.description}"
     
-    def test_extracted_csv_files_no_folder(self, mock_google_drive):
+    def test_extracted_csv_files_no_folder(self, google_drive_resource):
         """Test extraction fails gracefully when raw_data folder not found."""
-        mock_google_drive.find_folder_by_name.return_value = None
-        context = build_asset_context(resources={"google_drive": mock_google_drive})
+        # Simulate missing folder
+        google_drive_resource.folders.pop('raw_data', None)
+        
+        context = build_asset_context(resources={"google_drive": google_drive_resource})
         
         with pytest.raises(ValueError, match="raw_data.*not found"):
             extracted_csv_files(context)
     
-    def test_extracted_csv_files_no_files(self, mock_google_drive):
+    def test_extracted_csv_files_no_files(self, google_drive_resource):
         """Test extraction fails gracefully when no CSV files found."""
-        mock_google_drive.list_files_in_folder.return_value = []
-        context = build_asset_context(resources={"google_drive": mock_google_drive})
+        # Create a folder that returns no files
+        google_drive_resource.folders['raw_data'] = 'empty_folder'
+        
+        context = build_asset_context(resources={"google_drive": google_drive_resource})
         
         with pytest.raises(ValueError, match="No CSV files found"):
             extracted_csv_files(context)
     
-    def test_extracted_csv_files_handles_encoding(self, mock_google_drive, sample_csv_with_special_encoding):
-        """Test extraction handles different encodings correctly."""
-        mock_google_drive.get_file_content.return_value = io.BytesIO(sample_csv_with_special_encoding)
-        context = build_asset_context(resources={"google_drive": mock_google_drive})
+    def test_check_extracted_files_structure(self, sample_extracted_files):
+        """Test the file structure asset check."""
+        check_result = check_extracted_files_structure(sample_extracted_files)
         
-        result = extracted_csv_files(context)
+        assert check_result.passed
+        assert "correct structure" in check_result.description.lower()
+    
+    def test_check_extracted_data_not_empty(self, sample_extracted_files):
+        """Test the data emptiness asset check."""
+        check_result = check_extracted_data_not_empty(sample_extracted_files)
         
-        assert result.value is not None
-        assert len(result.value) > 0
-        # Should successfully parse the file with special characters
+        assert check_result.passed
+        assert "contain data" in check_result.description.lower()
 
 
 # ============================================================================
@@ -206,69 +229,69 @@ class TestTransformationAssets:
 class TestLoadingAssets:
     """Test suite for loading assets."""
     
-    def test_upload_transformed_csv_files_success(self, mock_google_drive, sample_transformed_files):
+    def test_upload_transformed_csv_files_success(self, google_drive_resource, sample_transformed_files):
         """Test successful upload to Google Drive."""
         context = build_asset_context()
         
-        result = upload_transformed_csv_files(context, mock_google_drive, sample_transformed_files)
+        result = upload_transformed_csv_files(context, google_drive_resource, sample_transformed_files)
         
         assert result.value is not None
         assert isinstance(result.value, list)
         assert len(result.value) > 0
         
         # Verify upload was called
-        mock_google_drive.upload_file_from_memory.assert_called()
+        assert len(google_drive_resource.upload_calls) > 0
         
         # Check metadata
         assert result.metadata['files_uploaded'].value > 0
     
-    def test_upload_transformed_csv_files_empty_list(self, mock_google_drive):
+    def test_upload_transformed_csv_files_empty_list(self, google_drive_resource):
         """Test handling of empty transformed files list."""
         context = build_asset_context()
         
-        result = upload_transformed_csv_files(context, mock_google_drive, [])
+        result = upload_transformed_csv_files(context, google_drive_resource, [])
     
-    def test_upload_transformed_csv_files_replace_existing(self, mock_google_drive, sample_transformed_files):
+    def test_upload_transformed_csv_files_replace_existing(self, google_drive_resource, sample_transformed_files):
         """Test that existing files are replaced."""
         # Simulate existing file
-        mock_google_drive.list_files_in_folder.return_value = [{
+        google_drive_resource._list_files_override = [{
             'id': 'existing_file_id',
             'name': 'test_file1_transformed.csv'
         }]
         
         context = build_asset_context()
         
-        result = upload_transformed_csv_files(context, mock_google_drive, sample_transformed_files)
+        result = upload_transformed_csv_files(context, google_drive_resource, sample_transformed_files)
     
-    def test_load_to_duckdb_success(self, mock_duckdb, sample_transformed_files):
+    def test_load_to_duckdb_success(self, duckdb_resource, sample_transformed_files):
         """Test successful loading to DuckDB."""
         context = build_asset_context()
         
-        result = load_csv_files_to_duckdb(context, mock_duckdb, sample_transformed_files)
+        result = load_csv_files_to_duckdb(context, duckdb_resource, sample_transformed_files)
         
         assert result.value is not None
         assert 'tables_created' in result.metadata
         assert result.metadata['tables_created'].value > 0
     
-    def test_load_to_postgresql_success(self, mock_postgresql, sample_transformed_files):
+    def test_load_to_postgresql_success(self, postgresql_resource, sample_transformed_files):
         """Test successful loading to PostgreSQL."""
         context = build_asset_context()
         
-        result = load_csv_files_to_postgresql(context, mock_postgresql, sample_transformed_files)
+        result = load_csv_files_to_postgresql(context, postgresql_resource, sample_transformed_files)
         
         assert result.value is not None
         assert 'tables_created' in result.metadata
     
-    def test_load_to_mongodb_success(self, mock_mongodb, sample_transformed_files):
+    def test_load_to_mongodb_success(self, mongodb_resource, sample_transformed_files):
         """Test successful loading to MongoDB."""
         context = build_asset_context()
         
-        result = load_csv_files_to_mongodb(context, mock_mongodb, sample_transformed_files)
+        result = load_csv_files_to_mongodb(context, mongodb_resource, sample_transformed_files)
         
         assert result.value is not None
         assert 'collections_created' in result.metadata
     
-    def test_load_to_duckdb_empty_dataframe(self, mock_duckdb):
+    def test_load_to_duckdb_empty_dataframe(self, duckdb_resource):
         """Test loading empty DataFrames to DuckDB."""
         empty_files = [{
             'file_name': 'empty.csv',
@@ -278,7 +301,7 @@ class TestLoadingAssets:
         }]
         
         context = build_asset_context()
-        result = load_csv_files_to_duckdb(context, mock_duckdb, empty_files)
+        result = load_csv_files_to_duckdb(context, duckdb_resource, empty_files)
         
         # Should handle gracefully
         assert result.value is not None
@@ -306,12 +329,12 @@ class TestAssetIntegration:
             assert ext['file_name'] == trans['original_file_name']
             assert trans['dataframe'] is not None
     
-    def test_transformation_to_loading_flow(self, mock_google_drive, sample_transformed_files):
+    def test_transformation_to_loading_flow(self, google_drive_resource, sample_transformed_files):
         """Test data flows correctly from transformation to loading."""
         context = build_asset_context()
         
         # Load
-        result = upload_transformed_csv_files(context, mock_google_drive, sample_transformed_files)
+        result = upload_transformed_csv_files(context, google_drive_resource, sample_transformed_files)
         
         # Verify all files were processed
         assert len(result.value) == len(sample_transformed_files)

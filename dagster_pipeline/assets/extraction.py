@@ -9,7 +9,7 @@ This module contains assets responsible for:
 import pandas as pd
 
 import dagster as dg
-from dagster import AssetExecutionContext, Output
+from dagster import AssetExecutionContext, Output, AssetCheckResult, AssetCheckSeverity, asset_check
 from dagster_pipeline.resources.google_drive_resource import GoogleDriveResource
 
 from typing import List, Dict
@@ -159,5 +159,102 @@ def extracted_csv_files(
             "files_extracted": len(extracted_data),
             "total_rows": sum(f['row_count'] for f in extracted_data),
             "file_names": [f['file_name'] for f in extracted_data]
+        }
+    )
+
+
+# ============================================================================
+# Asset Checks for Extraction
+# ============================================================================
+
+@asset_check(asset=extracted_csv_files, description="Validates that extracted files have required structure")
+def check_extracted_files_structure(extracted_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that all extracted files have the required structure."""
+    required_keys = {'file_name', 'dataframe', 'row_count', 'column_count', 'parse_info'}
+    
+    for i, file_data in enumerate(extracted_csv_files):
+        missing_keys = required_keys - set(file_data.keys())
+        if missing_keys:
+            return AssetCheckResult(
+                passed=False,
+                description=f"File {i} missing keys: {missing_keys}",
+                severity=AssetCheckSeverity.ERROR
+            )
+        
+        # Check dataframe is valid
+        if not isinstance(file_data['dataframe'], pd.DataFrame):
+            return AssetCheckResult(
+                passed=False,
+                description=f"File {i} ({file_data.get('file_name', 'unknown')}): dataframe is not a pandas DataFrame",
+                severity=AssetCheckSeverity.ERROR
+            )
+    
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(extracted_csv_files)} files have correct structure",
+        metadata={
+            "files_checked": len(extracted_csv_files),
+            "file_names": [f.get('file_name', 'unknown') for f in extracted_csv_files]
+        }
+    )
+
+
+@asset_check(asset=extracted_csv_files, description="Validates that extracted data is not empty")
+def check_extracted_data_not_empty(extracted_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that extracted files contain actual data."""
+    if not extracted_csv_files:
+        return AssetCheckResult(
+            passed=False,
+            description="No files were extracted",
+            severity=AssetCheckSeverity.ERROR
+        )
+    
+    empty_files = []
+    for file_data in extracted_csv_files:
+        df = file_data.get('dataframe')
+        if df is None or len(df) == 0 or len(df.columns) == 0:
+            empty_files.append(file_data.get('file_name', 'unknown'))
+    
+    if empty_files:
+        return AssetCheckResult(
+            passed=False,
+            description=f"Found {len(empty_files)} empty files: {empty_files}",
+            severity=AssetCheckSeverity.WARN
+        )
+    
+    total_rows = sum(f['row_count'] for f in extracted_csv_files)
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(extracted_csv_files)} files contain data",
+        metadata={
+            "total_rows": total_rows,
+            "files_count": len(extracted_csv_files)
+        }
+    )
+
+
+@asset_check(asset=extracted_csv_files, description="Validates encoding and separator detection")
+def check_extracted_parsing_info(extracted_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that files were successfully parsed with valid encoding/separator."""
+    files_with_auto = []
+    
+    for file_data in extracted_csv_files:
+        parse_info = file_data.get('parse_info', {})
+        if parse_info.get('encoding') == 'auto' or parse_info.get('separator') == 'auto':
+            files_with_auto.append(file_data.get('file_name', 'unknown'))
+    
+    if files_with_auto:
+        return AssetCheckResult(
+            passed=True,
+            description=f"{len(files_with_auto)} file(s) used auto-detection (may need review)",
+            severity=AssetCheckSeverity.WARN,
+            metadata={"files_with_auto": files_with_auto}
+        )
+    
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(extracted_csv_files)} files parsed with explicit encoding/separator",
+        metadata={
+            "files_count": len(extracted_csv_files)
         }
     )

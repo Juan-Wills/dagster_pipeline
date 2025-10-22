@@ -5,11 +5,10 @@ import sys
 import io
 from pathlib import Path
 from typing import Dict, List
-from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-from dagster import build_op_context
+from dagster import build_op_context, build_asset_context
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -54,29 +53,17 @@ def sample_extracted_files() -> List[Dict]:
     return [
         {
             'file_name': 'test_file1.csv',
-            'output_file_name': 'test_file1_transformed.csv',
             'dataframe': df1,
             'row_count': len(df1),
             'column_count': len(df1.columns),
-            'metadata': {
-                'parse_info': {'separator': ',', 'encoding': 'utf-8'},
-                'rows': len(df1),
-                'columns': len(df1.columns),
-                'file_id': 'file_id_1'
-            }
+            'parse_info': {'separator': ',', 'encoding': 'utf-8'}
         },
         {
             'file_name': 'test_file2.csv',
-            'output_file_name': 'test_file2_transformed.csv',
             'dataframe': df2,
             'row_count': len(df2),
             'column_count': len(df2.columns),
-            'metadata': {
-                'parse_info': {'separator': ',', 'encoding': 'utf-8'},
-                'rows': len(df2),
-                'columns': len(df2.columns),
-                'file_id': 'file_id_2'
-            }
+            'parse_info': {'separator': ',', 'encoding': 'utf-8'}
         }
     ]
 
@@ -101,71 +88,64 @@ def sample_transformed_files() -> List[Dict]:
 
 
 # ============================================================================
-# Mock Resource Fixtures
+# Test Resource Fixtures (using fake implementations instead of mocks)
 # ============================================================================
 
-@pytest.fixture
-def mock_google_drive():
-    """Mock Google Drive resource."""
-    mock = MagicMock()
-    
-    # Mock folder operations
-    mock.find_folder_by_name.return_value = 'mock_folder_id_123'
-    mock.create_folder_if_not_exists.return_value = 'mock_processed_folder_id'
-    
-    # Mock file listing
-    mock.list_files_in_folder.return_value = [
-        {'id': 'file1', 'name': 'test1.csv'},
-        {'id': 'file2', 'name': 'test2.csv'}
-    ]
-    
-    # Mock file content download
-    # Need at least 3 rows with 3+ unique values per column to pass transformation filters
-    sample_csv = "Name,Age,City\nJohn,30,NYC\nJane,25,LA\nBob,35,SF\n"
-    mock.get_file_content.return_value = io.BytesIO(sample_csv.encode('utf-8'))
-    
-    # Mock file upload
-    mock.upload_file_from_memory.return_value = {
-        'name': 'test_file.csv',
-        'id': 'uploaded_file_id',
-        'action': 'created'
-    }
-    
-    return mock
+from tests.fake_resources import (
+    FakeGoogleDriveResource,
+    FakeDuckDBResource,
+    FakePostgreSQLResource,
+    FakeMongoDBResource
+)
 
 
 @pytest.fixture
-def mock_duckdb():
-    """Mock DuckDB resource."""
-    mock = MagicMock()
-    mock.execute_query.return_value = None
-    mock.get_connection.return_value = MagicMock()
-    return mock
+def google_drive_resource():
+    """Fake Google Drive resource for testing."""
+    return FakeGoogleDriveResource()
 
 
 @pytest.fixture
-def mock_postgresql():
-    """Mock PostgreSQL resource."""
-    mock = MagicMock()
-    mock.execute_query.return_value = None
-    mock.get_connection.return_value = MagicMock()
-    mock.test_connection.return_value = True
-    return mock
+def duckdb_resource():
+    """Fake DuckDB resource for testing."""
+    return FakeDuckDBResource()
 
 
 @pytest.fixture
-def mock_mongodb():
-    """Mock MongoDB resource."""
-    mock = MagicMock()
-    mock.get_database.return_value = MagicMock()
-    mock.test_connection.return_value = True
-    
-    # Mock collection operations
-    mock_collection = MagicMock()
-    mock_collection.insert_many.return_value = MagicMock(inserted_ids=['id1', 'id2'])
-    mock.get_database.return_value.__getitem__.return_value = mock_collection
-    
-    return mock
+def postgresql_resource():
+    """Fake PostgreSQL resource for testing."""
+    return FakePostgreSQLResource()
+
+
+@pytest.fixture
+def mongodb_resource():
+    """Fake MongoDB resource for testing."""
+    return FakeMongoDBResource()
+
+
+# Legacy aliases for backwards compatibility
+@pytest.fixture
+def mock_google_drive(google_drive_resource):
+    """Legacy alias for google_drive_resource."""
+    return google_drive_resource
+
+
+@pytest.fixture
+def mock_duckdb(duckdb_resource):
+    """Legacy alias for duckdb_resource."""
+    return duckdb_resource
+
+
+@pytest.fixture
+def mock_postgresql(postgresql_resource):
+    """Legacy alias for postgresql_resource."""
+    return postgresql_resource
+
+
+@pytest.fixture
+def mock_mongodb(mongodb_resource):
+    """Legacy alias for mongodb_resource."""
+    return mongodb_resource
 
 
 # ============================================================================
@@ -179,14 +159,15 @@ def dagster_context():
 
 
 @pytest.fixture
-def dagster_context_with_resources(mock_google_drive, mock_duckdb, mock_postgresql, mock_mongodb):
-    """Create a Dagster execution context with all mocked resources."""
-    return build_op_context(
+def dagster_context_with_resources(google_drive_resource, duckdb_resource, 
+                                   postgresql_resource, mongodb_resource):
+    """Create a Dagster execution context with all test resources."""
+    return build_asset_context(
         resources={
-            "google_drive": mock_google_drive,
-            "duckdb": mock_duckdb,
-            "postgresql": mock_postgresql,
-            "mongodb": mock_mongodb,
+            "google_drive": google_drive_resource,
+            "duckdb": duckdb_resource,
+            "postgresql": postgresql_resource,
+            "mongodb": mongodb_resource,
         }
     )
 

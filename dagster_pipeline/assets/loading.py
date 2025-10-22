@@ -10,7 +10,7 @@ This module contains assets responsible for:
 import io
 
 import dagster as dg
-from dagster import AssetExecutionContext, Output
+from dagster import AssetExecutionContext, Output, AssetCheckResult, AssetCheckSeverity, asset_check
 from dagster_pipeline.resources.duckdb_connection import DuckDBResource
 from dagster_pipeline.resources.google_drive_resource import GoogleDriveResource
 from dagster_pipeline.resources.postgresql_resource import PostgreSQLResource
@@ -372,4 +372,136 @@ def load_csv_files_to_mongodb(
     except Exception as e:
         context.log.error(f"Error loading data into MongoDB: {str(e)}")
         raise
-        raise
+
+
+# ============================================================================
+# Asset Checks for Loading
+# ============================================================================
+
+@asset_check(asset=upload_transformed_csv_files, description="Validates successful file uploads")
+def check_upload_success(upload_transformed_csv_files: List[Dict]) -> AssetCheckResult:
+    """Check that all files were successfully uploaded to Google Drive."""
+    if not upload_transformed_csv_files:
+        return AssetCheckResult(
+            passed=True,
+            description="No files to upload (empty input)",
+            severity=AssetCheckSeverity.WARN
+        )
+    
+    failed_uploads = [f for f in upload_transformed_csv_files if f.get('status') != 'success']
+    
+    if failed_uploads:
+        return AssetCheckResult(
+            passed=False,
+            description=f"{len(failed_uploads)} file(s) failed to upload",
+            severity=AssetCheckSeverity.ERROR,
+            metadata={
+                "failed_count": len(failed_uploads),
+                "failed_files": [f.get('file_name', 'unknown') for f in failed_uploads]
+            }
+        )
+    
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(upload_transformed_csv_files)} files uploaded successfully",
+        metadata={"files_uploaded": len(upload_transformed_csv_files)}
+    )
+
+
+@asset_check(asset=load_csv_files_to_duckdb, description="Validates DuckDB table creation")
+def check_duckdb_loading(load_csv_files_to_duckdb: List[Dict]) -> AssetCheckResult:
+    """Check that all tables were successfully created in DuckDB."""
+    if not load_csv_files_to_duckdb:
+        return AssetCheckResult(
+            passed=True,
+            description="No tables to create (empty input)",
+            severity=AssetCheckSeverity.WARN
+        )
+    
+    failed_tables = []
+    for table_info in load_csv_files_to_duckdb:
+        if table_info.get('status') != 'success':
+            failed_tables.append(table_info.get('table_name', 'unknown'))
+    
+    if failed_tables:
+        return AssetCheckResult(
+            passed=False,
+            description=f"{len(failed_tables)} table(s) failed to create: {failed_tables}",
+            severity=AssetCheckSeverity.ERROR
+        )
+    
+    total_rows = sum(t.get('row_count', 0) for t in load_csv_files_to_duckdb)
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(load_csv_files_to_duckdb)} tables created successfully",
+        metadata={
+            "tables_created": len(load_csv_files_to_duckdb),
+            "total_rows_loaded": total_rows
+        }
+    )
+
+
+@asset_check(asset=load_csv_files_to_postgresql, description="Validates PostgreSQL table creation")
+def check_postgresql_loading(load_csv_files_to_postgresql: List[Dict]) -> AssetCheckResult:
+    """Check that all tables were successfully created in PostgreSQL."""
+    if not load_csv_files_to_postgresql:
+        return AssetCheckResult(
+            passed=True,
+            description="No tables to create (empty input)",
+            severity=AssetCheckSeverity.WARN
+        )
+    
+    failed_tables = []
+    for table_info in load_csv_files_to_postgresql:
+        if table_info.get('status') != 'success':
+            failed_tables.append(table_info.get('table_name', 'unknown'))
+    
+    if failed_tables:
+        return AssetCheckResult(
+            passed=False,
+            description=f"{len(failed_tables)} table(s) failed to create: {failed_tables}",
+            severity=AssetCheckSeverity.ERROR
+        )
+    
+    total_rows = sum(t.get('row_count', 0) for t in load_csv_files_to_postgresql)
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(load_csv_files_to_postgresql)} tables created successfully",
+        metadata={
+            "tables_created": len(load_csv_files_to_postgresql),
+            "total_rows_loaded": total_rows
+        }
+    )
+
+
+@asset_check(asset=load_csv_files_to_mongodb, description="Validates MongoDB collection creation")
+def check_mongodb_loading(load_csv_files_to_mongodb: List[Dict]) -> AssetCheckResult:
+    """Check that all collections were successfully created in MongoDB."""
+    if not load_csv_files_to_mongodb:
+        return AssetCheckResult(
+            passed=True,
+            description="No collections to create (empty input)",
+            severity=AssetCheckSeverity.WARN
+        )
+    
+    failed_collections = []
+    for collection_info in load_csv_files_to_mongodb:
+        if collection_info.get('status') != 'success':
+            failed_collections.append(collection_info.get('collection_name', 'unknown'))
+    
+    if failed_collections:
+        return AssetCheckResult(
+            passed=False,
+            description=f"{len(failed_collections)} collection(s) failed to create: {failed_collections}",
+            severity=AssetCheckSeverity.ERROR
+        )
+    
+    total_docs = sum(c.get('document_count', 0) for c in load_csv_files_to_mongodb)
+    return AssetCheckResult(
+        passed=True,
+        description=f"All {len(load_csv_files_to_mongodb)} collections created successfully",
+        metadata={
+            "collections_created": len(load_csv_files_to_mongodb),
+            "total_documents_loaded": total_docs
+        }
+    )
